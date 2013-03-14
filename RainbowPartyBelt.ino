@@ -1,6 +1,6 @@
-//This is a mix of the adafruit rgb belt and bonnaroo belt projects.
-//It is a work in progress and may not work as expected.
-
+//This is a mix of the adafruit rgb belt and bonnaroo belt projects, as 
+// well as many other projects or nipits of code. 
+//It is a work in progress and may not work as expected. Or at all. 
 
 
 // THIS PROGRAM *WILL* *NOT* *WORK* ON REALLY LONG LED STRIPS.  IT USES
@@ -21,15 +21,14 @@
 // programmers may have an easier time starting out with the 'strandtest'
 // program also included with the LPD8806 library.
 
-
-
 #include <avr/pgmspace.h>
 #include "SPI.h"
 #include "LPD8806.h"
 #include "TimerOne.h"
 
+
 //orig num of samples was 15, but this was too slow for my taste
-#define NUMBER_OF_SAMPLES 5
+#define NUMBER_OF_SAMPLES 8
 
 
 boolean state = 0;      // The input state toggle. false is auto, true is sound sensitive
@@ -37,7 +36,20 @@ int modePin = 0;  // Interrupt 0 (d0 on breakout)
 int sensorPin = A0;   // pin connected to the mic amp
 int sensorValue = 0;  // variable to store the value coming from the sensor
 
-int fooCount = 0;
+//Define brightness
+int high = 250;
+int med = 170;
+int low = 15;
+
+int brightness = high;
+int brightPin = 1;  // Interrupt 1 (d1 on breakout)
+
+
+static unsigned long last_interrupt_time = 0;
+unsigned long interrupt_time = millis();
+
+
+
 
 #if defined(USB_SERIAL) || defined(USB_SERIAL_ADAFRUIT)
 // this is for teensyduino support
@@ -83,7 +95,6 @@ int  fxVars[3][50],             // Effect instance variables (explained later)
      tCounter   = -1,           // Countdown to next transition
      transitionTime;            // Duration (in frames) of current transition
 
-
 uint32_t color;
 int i,b,c,j;
 int samples[NUMBER_OF_SAMPLES] = {0};
@@ -92,13 +103,14 @@ int sampleTotal=0;
 byte sampleIndex=0;
 int loopCounter=0;
 
-
 // function prototypes, leave these be :)
 void renderEffect00(byte idx);
 void renderEffect01(byte idx);
 void renderEffect02(byte idx);
 void renderEffect03(byte idx);
+void renderEffect03(byte idx);
 void renderEffect04(byte idx);
+void renderEffect05(byte idx);
 void renderAlpha00(void);
 void renderAlpha01(void);
 void renderAlpha02(void);
@@ -117,31 +129,28 @@ void (*renderEffect[])(byte) = {
   renderEffect01,
   renderEffect02,
   renderEffect03,
-  renderEffect04 },
+  renderEffect04,
+  renderEffect05 },
 (*renderAlpha[])(void)  = {
   renderAlpha00,
   renderAlpha01,
   renderAlpha02 };
 
-
-
-void awesomeBeltLights(uint32_t c, uint8_t level);
-uint32_t Wheel(uint16_t WheelPos);
-
 // ---------------------------------------------------------------------------
 
 void setup() {
-  
+
   //Attach the interrupt to the input pin and monitor for falling change 
   attachInterrupt(modePin, stateChange, FALLING);
-  
+  attachInterrupt(brightPin, brightChange, FALLING);
 
+  
   // Start up the LED strip.  Note that strip.show() is NOT called here --
   // the callback function will be invoked immediately when attached, and
   // the first thing the calback does is update the strip.
   strip.begin();
 
-  // Initialize random number generator from a floating analog input. 
+  // Initialize random number generator from a floating analog input.
   //NOTE: I have changed this since I use analog pin 0 for the mic. Othersiwse things would be less then random....
   randomSeed(analogRead(1));
   memset(imgData, 0, sizeof(imgData)); // Clear image data
@@ -155,22 +164,17 @@ void setup() {
   Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
   
   
-  Serial.begin(9600); 
+  
+    Serial.begin(9600); 
     Serial.println("START");  
+    
   
 }
-
-
-void scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t wait);
-
 
 void loop() {
   // Do nothing.  All the work happens in the callback() function below,
   // but we still need loop() here to keep the compiler happy.
-      
-      
 }
-
 
 
 //function to change modes 
@@ -204,6 +208,44 @@ void stateChange()
   }
 
 
+}
+
+
+//function to change brightness 
+void brightChange()
+{
+
+  // If interrupts come faster than 200ms, assume it's a bounce and ignore
+    unsigned long interrupt_time = millis();
+  if (interrupt_time - last_interrupt_time > 1000)
+  {
+
+    Serial.println(brightness);  
+  
+    //see what the brightness is and lower by one
+    if (brightness == high)
+    {
+      brightness = med;
+    }
+  
+    else if (brightness == med)
+    {
+      brightness = low;
+    }
+  
+    else if (brightness == low)
+    {
+      brightness = high;
+    }
+  
+    //this should never happen, but here is a catch all
+    else 
+    {
+      brightness = high;
+    }
+  
+    last_interrupt_time = interrupt_time;
+  }
 }
 
 
@@ -250,18 +292,6 @@ void audioMode()
   
     // Increment our loop counter
     loopCounter++;
-  }
-}
-
-
-// Fill the dots progressively along the strip.
-void colorWipe(uint32_t c, uint8_t wait) {
-  int i;
-
-  for (i=0; i < strip.numPixels(); i++) {
-      strip.setPixelColor(i, c);
-      strip.show();
-      delay(wait);
   }
 }
 
@@ -349,7 +379,6 @@ void callback() {
 // each transition, the corresponding set of fxVars, being keyed to the same
 // indexes, are automatically carried with them.
 
-
 // Simplest rendering effect: fill entire image with solid color
 void renderEffect00(byte idx) {
   // Only needs to be rendered once, when effect is initialized:
@@ -362,6 +391,7 @@ void renderEffect00(byte idx) {
     fxVars[idx][0] = 1; // Effect initialized
   }
 }
+
 
 // Rainbow effect (1 or more full loops of color wheel at 100% saturation).
 // Not a big fan of this pattern (it's way overused with LED stuff), but it's
@@ -392,6 +422,7 @@ void renderEffect01(byte idx) {
   }
   fxVars[idx][3] += fxVars[idx][2];
 }
+
 
 // Sine wave chase effect
 void renderEffect02(byte idx) {
@@ -426,12 +457,13 @@ void renderEffect02(byte idx) {
   fxVars[idx][4] += fxVars[idx][3];
 }
 
+
 // Data for American-flag-like colors (20 pixels representing
 // blue field, stars and stripes).  This gets "stretched" as needed
 // to the full LED strip length in the flag effect code, below.
 // Can change this data to the colors of your own national flag,
 // favorite sports team colors, etc.  OK to change number of elements.
-//EDIT: made blue darker, and mixed it up 
+//EDIT: made blue darker, and mixed it up (aka, not an american flag)
 #define C_RED   160,   0,   0
 #define C_GREEN   0,   100,   0
 #define C_WHITE 255, 255, 255
@@ -441,6 +473,7 @@ PROGMEM prog_uchar flagTable[]  = {
   C_GREEN, C_BLUE , C_WHITE, C_BLUE ,C_RED, C_GREEN , C_WHITE, C_BLUE , C_WHITE,
   C_GREEN, C_BLUE , C_WHITE, C_BLUE ,C_RED, C_GREEN , C_WHITE, C_BLUE , C_WHITE,
   C_GREEN, C_BLUE , C_WHITE,C_RED };
+
 
 // Wavy flag effect
 void renderEffect03(byte idx) {
@@ -480,58 +513,82 @@ void renderEffect03(byte idx) {
 }
 
 
-
-
+// Pulse entire image with solid color
 void renderEffect04(byte idx) {
- //scanner();
-}
-
-
-// "Larson scanner" = Cylon/KITT bouncing light effect
-void scanner() {
-
-//void renderEffect06(byte idx) {
-  int i, j, pos, dir;
-
-  pos = 0;
-  dir = 1;
+  if(fxVars[idx][0] == 0) {
+    fxVars[idx][1] = 50; // Pulse ammount min (v)
+    fxVars[idx][2] = 250; // Pulse ammount max (v)
+    fxVars[idx][3] = random(1536); // Random hue
+    
+    fxVars[idx][4] = fxVars[idx][1]; // pulse position 
+    fxVars[idx][5] = 1; // 0 = negative, 1 = positive
+    fxVars[idx][6] = 2 + random(10); // step value
+    fxVars[idx][0] = 1; // Effect initialized
+  }
   
-  uint8_t r = 127;
-  uint8_t g = 0;
-  uint8_t b = 0;
-  uint8_t wait = 30; 
+  byte *ptr = &imgData[idx][0];
+  long color, i;
+  for(i=0; i<numPixels; i++) {
+    color = hsv2rgb(fxVars[idx][3], 255, fxVars[idx][4]);
+    *ptr++ = color >> 16; *ptr++ = color >> 8; *ptr++ = color;
+  }
   
-
-  for(i=0; i<((strip.numPixels()-1) * 8); i++) {
-    // Draw 5 pixels centered on pos.  setPixelColor() will clip
-    // any pixels off the ends of the strip, no worries there.
-    // we'll make the colors dimmer at the edges for a nice pulse
-    // look
-    strip.setPixelColor(pos - 2, strip.Color(r/4, g/4, b/4));
-    strip.setPixelColor(pos - 1, strip.Color(r/2, g/2, b/2));
-    strip.setPixelColor(pos, strip.Color(r, g, b));
-    strip.setPixelColor(pos + 1, strip.Color(r/2, g/2, b/2));
-    strip.setPixelColor(pos + 2, strip.Color(r/4, g/4, b/4));
-
-    strip.show();
-    delay(wait);
-    // If we wanted to be sneaky we could erase just the tail end
-    // pixel, but it's much easier just to erase the whole thing
-    // and draw a new one next time.
-    for(j=-2; j<= 2; j++) 
-        strip.setPixelColor(pos+j, strip.Color(0,0,0));
-    // Bounce off ends of strip
-    pos += dir;
-    if(pos < 0) {
-      pos = 1;
-      dir = -dir;
-    } else if(pos >= strip.numPixels()) {
-      pos = strip.numPixels() - 2;
-      dir = -dir;
+  if (fxVars[idx][5] == 0) {
+    fxVars[idx][4] = fxVars[idx][4] - fxVars[idx][6];
+    if (fxVars[idx][4] <= fxVars[idx][1]) {
+      fxVars[idx][5] = 1;
+      fxVars[idx][4] = fxVars[idx][1];
+    }
+  } else if (fxVars[idx][5] == 1) {
+    fxVars[idx][4] = fxVars[idx][4] + fxVars[idx][6];
+    if (fxVars[idx][4] >= fxVars[idx][2]) {
+      fxVars[idx][5] = 0;
+      fxVars[idx][4] = fxVars[idx][2];
     }
   }
 }
 
+
+
+// larson scanner effect
+void renderEffect05(byte idx) {
+  if(fxVars[idx][0] == 0) { // Initialize effect?
+    fxVars[idx][1] = random(1536); // Random hue for 'Eye'
+    fxVars[idx][2] = (fxVars[idx][1] >= 768) ?  // background hue is 180 degrees opposie
+      (fxVars[idx][1] - 768) : (fxVars[idx][1] + 768); 
+    // Frame-to-frame increment (speed) -- may be positive or negative,
+    // but magnitude shouldn't be so small as to be boring.  It's generally
+    // still less than a full pixel per frame, making motion very smooth.
+    fxVars[idx][3] = 10 + random(10);  // eye speed in fps.  not too fast not too slow
+    fxVars[idx][4] = 0; // Current position
+    fxVars[idx][5] = 10; // Eye size 0 - 127, generally 0-5 is what you want
+                        // look as the sin table, picks how far down the table 
+                        // we look.
+    fxVars[idx][0] = 1; // Effect initialized
+  }
+
+  byte *ptr = &imgData[idx][0];
+  int  foo;
+  long color, i;
+  for(i=0; i<numPixels; i++) {
+    // Use cos to determine the position of the eye as if it's a circle
+    // since it use 1/2 degree increments and we use 720 here
+    foo = fixCos(fxVars[idx][4] + 720 * i / numPixels);
+    color = (foo >= (127 - fxVars[idx][5])) ?
+       hsv2rgb(fxVars[idx][1], 255, 255) :
+       hsv2rgb(fxVars[idx][2], 255, 127);
+    *ptr++ = color >> 16; *ptr++ = color >> 8; *ptr++ = color;
+  }
+  fxVars[idx][4] += fxVars[idx][3];
+  
+  // Flip directions when we reach the end
+  if (fxVars[idx][4] <= 0) {
+    fxVars[idx][3] = fxVars[idx][3] * -1;
+  } else if (fxVars[idx][4] >= 720) {
+    fxVars[idx][3] = fxVars[idx][3] * -1;
+  }
+  
+}
 
 
 // TO DO: Add more effects here...Larson scanner, etc.
@@ -599,8 +656,6 @@ void renderAlpha02(void) {
     else                      alphaMask[i] = 0;
   }
 }
-
-
 
 // TO DO: Add more transitions here...triangle wave reveal, etc.
 
@@ -735,8 +790,6 @@ char fixCos(int angle) {
 
 
 
-
-
 /* 
 This custom function handles the logic to turn the LEDs on.
 */ 
@@ -765,6 +818,7 @@ void awesomeBeltLights(uint32_t c, uint8_t level) {
   strip.show();
 }
 
+
 /* 
 This function was provided by Adafruit in the LED belt example code and is
 unmodified.
@@ -792,4 +846,5 @@ uint32_t Wheel(uint16_t WheelPos)
   }
   return(strip.Color(r,g,b));
 }
+
 
